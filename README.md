@@ -1,9 +1,7 @@
-# ReconForgge
-Reconnaissance engine for attack surface discovery and exposure intelligence.
 # 🛡 ReconForge  
 ### Your Frontline Port Recon Scanner
 
-ReconForge is a high-performance reconnaissance framework built from scratch for serious bug bounty hunters, red teamers, and security engineers.
+ReconForge is a high-performance reconnaissance framework built from scratch.
 
 It focuses purely on **attack surface discovery and exposure intelligence** — not exploitation.
 
@@ -277,13 +275,6 @@ It is designed to map exposure surface quickly and cleanly.
 Use ReconForge only against systems you own or have explicit permission to test.
 
 Unauthorized scanning may be illegal.
-
----
-
-# 👨‍💻 Author
-
-Abhinay Chowdhary  
-Cybersecurity Enthusiast | Ethical Hacker  
 
 ---
 
