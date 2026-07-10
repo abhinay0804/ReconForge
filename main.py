@@ -104,22 +104,31 @@ def main():
     has_web = False
     has_ssh = False
 
+    WEB_PORTS = [80, 443, 8080, 8443, 8000, 8888]
+    WEB_PRODUCTS = ["Apache", "nginx"]
+
     for item in tcp_results:
         port = item["port"]
         banner = item["banner"]
 
         tcp_ports.append(port)
 
-        if port in [80, 443]:
+        product, version = (None, None)
+        if banner:
+            product, version = extract_product_version(banner)
+
+        # Web surface: known web ports, OR a banner-identified web server on any port
+        if port in WEB_PORTS or product in WEB_PRODUCTS or (banner and "HTTP" in banner.upper()):
             has_web = True
-        if port == 22:
+
+        # SSH exposure: standard port, OR banner-identified OpenSSH on any port
+        if port == 22 or product == "OpenSSH":
             has_ssh = True
 
         print(f"[+] TCP {port} OPEN")
 
         if banner:
             print(banner)
-            product, version = extract_product_version(banner)
             if product and version:
                 software.append((product, version))
                 print(f"[!] Identified Software: {product} {version}")
