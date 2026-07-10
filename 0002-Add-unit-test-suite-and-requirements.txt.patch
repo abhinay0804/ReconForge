@@ -1,0 +1,210 @@
+From e037183c29e6780c66565a6ce4173f849a61d7af Mon Sep 17 00:00:00 2001
+From: Nama Abhinay <abhinay@example.com>
+Date: Fri, 10 Jul 2026 05:31:56 +0000
+Subject: [PATCH 2/3] Add unit test suite and requirements.txt
+
+Covers the pure logic paths that don't need root/raw sockets:
+- classify_exposure() web/SSH detection, incl. a regression test for
+  the banner-vs-port bug fixed in the previous commit
+- banner parsing / product-version extraction (Apache, nginx, OpenSSH)
+- OpenSSH version normalization for CVE matching
+- TTL-based OS fingerprinting heuristic
+- target validation, with DNS resolution mocked
+
+26 tests, all passing. Scanning/packet logic itself still needs manual
+integration testing since it requires raw socket privileges.
+---
+ requirements.txt         |  3 +++
+ tests/__init__.py        |  0
+ tests/test_classify.py   | 54 ++++++++++++++++++++++++++++++++++++++++
+ tests/test_cve_lookup.py | 45 +++++++++++++++++++++++++++++++++
+ tests/test_engine.py     | 25 +++++++++++++++++++
+ tests/test_validator.py  | 17 +++++++++++++
+ 6 files changed, 144 insertions(+)
+ create mode 100644 requirements.txt
+ create mode 100644 tests/__init__.py
+ create mode 100644 tests/test_classify.py
+ create mode 100644 tests/test_cve_lookup.py
+ create mode 100644 tests/test_engine.py
+ create mode 100644 tests/test_validator.py
+
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..0fc90b2
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,3 @@
++scapy>=2.5.0
++requests>=2.31.0
++pytest>=7.4.0
+diff --git a/tests/__init__.py b/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/test_classify.py b/tests/test_classify.py
+new file mode 100644
+index 0000000..a334c97
+--- /dev/null
++++ b/tests/test_classify.py
+@@ -0,0 +1,54 @@
++from scanner.classify import classify_exposure
++
++
++def test_standard_web_port_flagged():
++    has_web, has_ssh = classify_exposure(80, "")
++    assert has_web is True
++    assert has_ssh is False
++
++
++def test_standard_https_port_flagged():
++    has_web, _ = classify_exposure(443, "")
++    assert has_web is True
++
++
++def test_nonstandard_web_port_by_number():
++    # 8080 is a common alt-HTTP port, should be flagged even with no banner
++    has_web, _ = classify_exposure(8080, "")
++    assert has_web is True
++
++
++def test_web_server_on_unlisted_port_via_banner():
++    # A web server running on a totally arbitrary port should still
++    # be flagged as web exposure based on its banner content.
++    has_web, _ = classify_exposure(31337, "HTTP/1.1 200 OK\r\nServer: nginx")
++    assert has_web is True
++
++
++def test_web_server_on_unlisted_port_via_product():
++    has_web, _ = classify_exposure(9999, "some banner", product="Apache")
++    assert has_web is True
++
++
++def test_standard_ssh_port_flagged():
++    _, has_ssh = classify_exposure(22, "SSH-2.0-OpenSSH_8.9")
++    assert has_ssh is True
++
++
++def test_ssh_on_nonstandard_port_via_product():
++    # Regression test: this was the original bug -- OpenSSH running on
++    # a non-standard port was not being flagged before the fix.
++    _, has_ssh = classify_exposure(2222, "SSH-2.0-OpenSSH_7.2", product="OpenSSH")
++    assert has_ssh is True
++
++
++def test_unrelated_service_not_flagged():
++    has_web, has_ssh = classify_exposure(5432, "some random banner")
++    assert has_web is False
++    assert has_ssh is False
++
++
++def test_empty_banner_does_not_crash():
++    has_web, has_ssh = classify_exposure(12345, None)
++    assert has_web is False
++    assert has_ssh is False
+diff --git a/tests/test_cve_lookup.py b/tests/test_cve_lookup.py
+new file mode 100644
+index 0000000..fdc5277
+--- /dev/null
++++ b/tests/test_cve_lookup.py
+@@ -0,0 +1,45 @@
++from scanner.cve_lookup import extract_product_version, normalize_openssh_version
++
++
++def test_extract_apache_version():
++    product, version = extract_product_version("Server: Apache/2.4.7 (Ubuntu)")
++    assert product == "Apache"
++    assert version == "2.4.7"
++
++
++def test_extract_nginx_version():
++    product, version = extract_product_version("Server: nginx/1.18.0")
++    assert product == "nginx"
++    assert version == "1.18.0"
++
++
++def test_extract_openssh_version():
++    product, version = extract_product_version("SSH-2.0-OpenSSH_7.2")
++    assert product == "OpenSSH"
++    assert version == "7.2"
++
++
++def test_extract_openssh_version_with_patch_suffix():
++    product, version = extract_product_version("SSH-2.0-OpenSSH_6.6.1p1")
++    assert product == "OpenSSH"
++    assert version == "6.6.1p1"
++
++
++def test_extract_returns_none_for_empty_banner():
++    product, version = extract_product_version("")
++    assert product is None
++    assert version is None
++
++
++def test_extract_returns_none_for_unrecognized_banner():
++    product, version = extract_product_version("HTTP/1.1 200 OK\r\nServer: MysteryServer/9.9")
++    assert product is None
++    assert version is None
++
++
++def test_normalize_openssh_version_strips_patch_suffix():
++    assert normalize_openssh_version("6.6.1p1") == "6.6.1"
++
++
++def test_normalize_openssh_version_leaves_clean_version_untouched():
++    assert normalize_openssh_version("8.9") == "8.9"
+diff --git a/tests/test_engine.py b/tests/test_engine.py
+new file mode 100644
+index 0000000..7a03936
+--- /dev/null
++++ b/tests/test_engine.py
+@@ -0,0 +1,25 @@
++from scanner.engine import guess_os
++
++
++def test_low_ttl_guessed_as_linux():
++    assert guess_os(64) == "Linux / Unix"
++
++
++def test_low_ttl_below_threshold_guessed_as_linux():
++    assert guess_os(48) == "Linux / Unix"
++
++
++def test_mid_ttl_guessed_as_windows():
++    assert guess_os(128) == "Windows"
++
++
++def test_mid_ttl_above_linux_threshold_guessed_as_windows():
++    assert guess_os(100) == "Windows"
++
++
++def test_high_ttl_guessed_as_network_device():
++    assert guess_os(255) == "Network Device / Router"
++
++
++def test_ttl_above_max_returns_unknown():
++    assert guess_os(300) == "Unknown"
+diff --git a/tests/test_validator.py b/tests/test_validator.py
+new file mode 100644
+index 0000000..4f113e8
+--- /dev/null
++++ b/tests/test_validator.py
+@@ -0,0 +1,17 @@
++from unittest.mock import patch
++from utils.validator import validate_target
++
++
++def test_valid_hostname_resolves():
++    with patch("socket.gethostbyname", return_value="93.184.216.34"):
++        assert validate_target("example.com") is True
++
++
++def test_unresolvable_hostname_returns_false():
++    with patch("socket.gethostbyname", side_effect=OSError("no such host")):
++        assert validate_target("not-a-real-domain.invalid") is False
++
++
++def test_valid_ip_address_resolves():
++    with patch("socket.gethostbyname", return_value="127.0.0.1"):
++        assert validate_target("127.0.0.1") is True
+-- 
+2.43.0
+
