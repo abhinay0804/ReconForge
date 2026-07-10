@@ -202,6 +202,67 @@ This is exposure awareness, not exploitation.
 
 ---
 
+# 🖨 Sample Output
+
+Real output from a scan against a local target running an HTTP service:
+
+```
+Scan started: 2026-07-09 17:07:16
+Target      : 127.0.0.1
+Port Range  : 7900-8200
+
+[*] OS Guess: Linux / Unix
+[+] TCP 8080 OPEN
+
+========== RECON SUMMARY ==========
+TCP Open Ports : 1
+UDP Exposure  : 0
+Web Surface  : Yes
+SSH Exposed  : No
+HIGH CVEs    : 0
+OS           : Linux / Unix
+Risk Score   : 1.5 / 10 (LOW)
+=================================
+
+Recon Time: 8 seconds
+
+[+] Recon report saved to reconforge_127.0.0.1_20260709_170716.json
+```
+
+Banner grabbing + software fingerprinting against a service exposing an OpenSSH banner on a non-standard port:
+
+```
+[+] TCP 2222 OPEN
+SSH-2.0-OpenSSH_7.2
+[!] Identified Software: OpenSSH 7.2
+
+========== RECON SUMMARY ==========
+TCP Open Ports : 1
+Web Surface  : No
+SSH Exposed  : Yes
+Risk Score   : 1.5 / 10 (LOW)
+=================================
+```
+
+Note: exposure detection (`Web Surface` / `SSH Exposed`) is banner-aware, not just port-number-based — a service is correctly flagged even when it isn't running on its conventional port (e.g. OpenSSH on 2222, not just 22).
+
+Resulting JSON report:
+
+```json
+{
+  "target": "127.0.0.1",
+  "duration": 8,
+  "os": "Linux / Unix",
+  "tcp_ports": [8080],
+  "udp_ports": [],
+  "software": [],
+  "exposure_cves": {},
+  "risk": {"score": 1.5, "level": "LOW"}
+}
+```
+
+---
+
 # 📄 JSON Report Format
 
 Example structure:
