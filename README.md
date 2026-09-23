@@ -1,3 +1,4 @@
+![CI](https://github.com/abhinay0804/ReconForge/actions/workflows/ci.yml/badge.svg)
 # 🛡 ReconForge  
 ### Your Frontline Port Recon Scanner
 
